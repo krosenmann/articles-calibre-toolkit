@@ -1,0 +1,122 @@
+#+OPTIONS: ':nil *:t -:t ::t <:t H:3 \n:nil ^:t arch:headline
+#+OPTIONS: author:t broken-links:nil c:nil creator:nil
+#+OPTIONS: d:(not "LOGBOOK") date:t e:t email:nil f:t inline:t num:t
+#+OPTIONS: p:nil pri:nil prop:nil stat:t tags:t tasks:t tex:t
+#+OPTIONS: timestamp:t title:t toc:t todo:t |:t
+#+TITLE: Плагины для работы со статьями в Calibre
+#+DATE: <2018-10-21 Вс>
+#+AUTHOR: roman
+#+EMAIL: krosenmann@gmail.com
+#+LANGUAGE: ru
+#+SELECT_TAGS: export
+#+EXCLUDE_TAGS: noexport
+#+CREATOR: Emacs 27.0.50 (Org mode 9.1.14)
+#+STARTUP: showall
+
+* Вступление
+  Articles Calibre Toolkit -- набор плагинов Calibre для организации
+  работы с научными статьями.
+  #+CAPTION: Список плагинов
+  #+tblname: plugins
+  | Название плагина    | Описание                           | Тип    |
+  |---------------------+------------------------------------+--------|
+  | Scientific Metadata | Загружает метаданные по DOI статьи | Source |
+  | Extract DOI         | Извлекает DOI из документа         |        |
+
+* TODO Установка и настройка
+   Плагины устанавливаются независимо, и могут быть использованы
+   порозонь. Поэтому для установки достаточно скопировать интересующие
+   zip-файлы в папку с плагинами Calibre, например
+   =~/.config/calibre/plugins= в Ubuntu.
+
+* TODO Как это устроено?
+  
+  #+name: Информация о наборе
+  #+BEGIN_SRC python :exports code
+    supported_platforms = ['windows', 'osx', 'linux']
+    author = 'Roman Zayrullin'
+    version = (0, 0, 1)
+    minimum_calibre_version = (3, 0, 0)
+  #+END_SRC
+  #+name: datamacro
+  #+BEGIN_SRC elisp :var plinfo=plugins :var ord=1
+    (let ((plugin-info
+           (mapcar (lambda (x)
+                     (format "class %s(%s)\n    %s"
+                             (replace-regexp-in-string " " "" (car x))
+                             (caddr x)
+                             (format "name = '%s'\n    description = '%s'" (car x) (cadr x))))
+                   plinfo)))
+      (cond ((equal ord 1) (car plugin-info))
+            ((equal ord 2) (cadr plugin-info))))
+  #+END_SRC
+
+  #+RESULTS: datamacro
+  : class ScientificMetadata(Source)
+  :     name = 'Scientific Metadata'
+  :     description = 'Загружает метаданные по DOI статьи'
+
+** IN_PROCESS Поиск и загрузка метаданных 
+  Плагин, условно, можно разделить на 2 части:
+  - Обработка и выкачивание данных из сети (с помощью библиотеки [[https://habanero.readthedocs.io/en/latest/][habanero]])
+  - Программно-интерфейсные вещи: чтение информации о публикации из
+    Calibre, и запись полученной из сети информации. 
+
+  Для плагинов метаданных в Calibre переопределяется метод ~identify~,
+  в который уже передается большая часть нужной информации и все
+  необходимые для загрузки интерфейсы. Все, что нужно здесь сделать:
+  корректно вызвать необходимые методы и передать DOI функции загрузки
+  для, непосредственно, загрузки.
+  Для целостности пакавана, выясним, является ли записанный в БД
+  Calibre DOI корректным, и можно просить habanero найти информацию о
+  нужных нам статьях.
+  
+  #+BEGIN_SRC python :noweb yes
+    from calibre.ebooks.metadata.sources.base import Source
+    from calibre.ebooks.metadata.book.base import Metadata
+
+
+    <<Загрузка информации>>
+
+
+    <<datamacro(ord=1)>>
+        <<Информация о наборе>>
+        <<Поля БД()>>
+        def identify(self, log, result_queue, abort,
+                     title=None, authors=None, identifiers={}, timeout=30):
+            doi = identifiers.get("doi", None)
+            if not (doi and is_valid(doi)):
+                return None
+
+            data = load_info(doi)
+            if not data:
+                return None
+            <<Запись метаданных в БД>>
+  #+END_SRC
+
+*** TODO Загрузка и запись метаданных
+    Для начала установим соответсвия между полями в базе Calibre и
+    тем, что возвращает habanero. Их спокойно можно выдумывать, и
+    связывать какие поля с какими угодно.
+    Так же, по этому соотвествию, можно установить список полей,
+    которые затрагивает плагин ("поле... поле... поле... . Поле...")
+    #+caption: Соответствия полей
+    #+tblname: fields
+    | Calibre   | Habanero                      |
+    |-----------+-------------------------------|
+    | title     | title                         |
+    | pubdate   | pubdate                       |
+    | publisher | publisher, publisher-location |
+    | comments  | container-title               |
+    | authors   | author                        |
+    | language  | language                      |
+    #+NAME: Поля БД
+    #+BEGIN_SRC python :var fields=fields[,0] :results output
+      print("touched_fields = frozenset({})".format(fields))
+    #+END_SRC
+
+    #+RESULTS: Поля БД
+    : touched_fields = frozenset(['title', 'pubdate', 'publisher', 'comments', 'authors', 'language'])
+
+    
+** TODO Извлечение DOI из файла
