@@ -18,10 +18,10 @@
   работы с научными статьями.
   #+CAPTION: Список плагинов
   #+tblname: plugins
-  | Название плагина    | Описание                           | Тип    |
-  |---------------------+------------------------------------+--------|
-  | Scientific Metadata | Загружает метаданные по DOI статьи | Source |
-  | Extract DOI         | Извлекает DOI из документа         |        |
+  | Название плагина    | Описание                                       | Тип                 |
+  |---------------------+------------------------------------------------+---------------------|
+  | Scientific Metadata | Загружает метаданные по DOI статьи из CrossRef | Source              |
+  | Extract DOI         | Извлекает DOI из документа                     | InterfaceActionBase |
 
 * TODO Установка и настройка
    Плагины устанавливаются независимо, и могут быть использованы
@@ -30,7 +30,11 @@
    =~/.config/calibre/plugins= в Ubuntu.
 
 * TODO Как это устроено?
-  
+  Каждый плагин Calibre имеет определенную структуру и наследуется от
+  некотого базового класса, в зависимости от типа (указан в
+  таблице выше).
+  Есть общие для всех плагинов аттрибуты, в которых указывается
+  имя, описание, версия, информация об авторе и т.д.
   #+name: Информация о наборе
   #+BEGIN_SRC python :exports code
     supported_platforms = ['windows', 'osx', 'linux']
@@ -54,12 +58,13 @@
   #+RESULTS: datamacro
   : class ScientificMetadata(Source)
   :     name = 'Scientific Metadata'
-  :     description = 'Загружает метаданные по DOI статьи'
+  :     description = 'Загружает метаданные по DOI статьи из CrossRef'
 
-** IN_PROCESS Поиск и загрузка метаданных 
+** Поиск и загрузка метаданных 
   Плагин, условно, можно разделить на 2 части:
-  - Обработка и выкачивание данных из сети (с помощью библиотеки [[https://habanero.readthedocs.io/en/latest/][habanero]])
-  - Программно-интерфейсные вещи: чтение информации о публикации из
+  + Обработка и выкачивание данных из сети (с помощью библиотек
+    [[https://habanero.readthedocs.io/en/latest/][habanero]] и [[https://bibtexparser.readthedocs.io/en/master/index.html][bibtexparser]])
+  + Программно-интерфейсные вещи: чтение информации о публикации из
     Calibre, и запись полученной из сети информации. 
 
   Для плагинов метаданных в Calibre переопределяется метод ~identify~,
@@ -70,8 +75,22 @@
   Для целостности пакавана, выясним, является ли записанный в БД
   Calibre DOI корректным, и можно просить habanero найти информацию о
   нужных нам статьях.
+  Для валидации doi используем [[http://stackoverflow.com/questions/27910/finding-a-doi-in-a-document-or-page][регулярку]]
+  #+name: Дополнительные импорты
+  #+BEGIN_SRC python 
+    import habanero
+    import re
+    import bibtexparser
+  #+END_SRC
+
+  #+name: Утилиты
+  #+BEGIN_SRC python
+    def is_valid(s):
+        return re.match(r'\s*(10[.][0-9]{3,}(?:[.][0-9]+)*/(?:(?!["&\'<>])\S)+)\b', s)
+  #+END_SRC
   
   #+BEGIN_SRC python :noweb yes
+    <<Дополнительные импорты>>
     from calibre.ebooks.metadata.sources.base import Source
     from calibre.ebooks.metadata.book.base import Metadata
 
@@ -79,9 +98,13 @@
     <<Загрузка информации>>
 
 
+    <<Утилиты>>
+
+
     <<datamacro(ord=1)>>
         <<Информация о наборе>>
         <<Поля БД()>>
+
         def identify(self, log, result_queue, abort,
                      title=None, authors=None, identifiers={}, timeout=30):
             doi = identifiers.get("doi", None)
@@ -94,29 +117,93 @@
             <<Запись метаданных в БД>>
   #+END_SRC
 
-*** TODO Загрузка и запись метаданных
+*** Загрузка и запись метаданных
     Для начала установим соответсвия между полями в базе Calibre и
     тем, что возвращает habanero. Их спокойно можно выдумывать, и
     связывать какие поля с какими угодно.
     Так же, по этому соотвествию, можно установить список полей,
     которые затрагивает плагин ("поле... поле... поле... . Поле...")
+    Их же используем для записи.
+    Больше всего проблем тут доставляет разбор даты публикации,
+    т.к. Calibre ожидает получить ~datetime~ объект. Мне лень сейчас
+    придумывать, как нормально парсить и генерировать дату, поэтому
+    месяц принимаем равным =1=, то есть =Январю=.
+    #+name: Парсинг даты
+    #+BEGIN_SRC elisp
+      ((string-match-p "year" s)
+       (format "datetime.datetime(year=data[0]['year'], month=1, day=1)"))
+    #+END_SRC
+    Так же автор по типу данных не совпадает: на вход Calibre
+    ожидает список.
+    #+name: Парсинг авторов
+    #+BEGIN_SRC elisp
+      ((string-match-p "author" s)
+       (format "data[0]['author'].split(' and ')"))
+    #+END_SRC
+    Из еще оставшихся дыр - возможное отстуствие некоторых полей и
+    дополнительные ключи (информация из них будет читаться в случае
+    провала первого чтения).
     #+caption: Соответствия полей
     #+tblname: fields
-    | Calibre   | Habanero                      |
-    |-----------+-------------------------------|
-    | title     | title                         |
-    | pubdate   | pubdate                       |
-    | publisher | publisher, publisher-location |
-    | comments  | container-title               |
-    | authors   | author                        |
-    | language  | language                      |
+    | Calibre   | Habanero  |
+    |-----------+-----------|
+    | title     | title     |
+    | pubdate   | year      |
+    | publisher | publisher |
+    | authors   | author    |
+    | language  | language  |
     #+NAME: Поля БД
-    #+BEGIN_SRC python :var fields=fields[,0] :results output
-      print("touched_fields = frozenset({})".format(fields))
+    #+BEGIN_SRC python :var fields=fields[,0]
+      return "touched_fields = frozenset({})".format(fields)
     #+END_SRC
 
-    #+RESULTS: Поля БД
-    : touched_fields = frozenset(['title', 'pubdate', 'publisher', 'comments', 'authors', 'language'])
+    #+NAME: Преобразование полей
+    #+BEGIN_SRC elisp :var fields=fields :noweb yes
+      (defun string-translation (s)
+        (cond
+         <<Парсинг даты>>
+         <<Парсинг авторов>>
+         ((string-match-p ", " s)
+          (mapconcat (lambda (x)
+                       (format "data[0]['%s']" x))
+                     (split-string s ", ")
+                     " + "))
+         (t (format "data[0]['%s']" s))))
+      (concat "result = {\n"
+              (mapconcat (lambda (x)
+                           (format "'%s': %s" (car x) (string-translation (cadr x))))
+                         fields
+                         ",\n") "}\n")
+    #+END_SRC
 
+    #+RESULTS: Преобразование полей
+    : result = {
+    : 'title': data[0]['title'],
+    : 'pubdate': datetime.datetime(year=data[0]['year'], month=1, day=1),
+    : 'publisher': data[0]['publisher'],
+    : 'authors': data[0]['author'].split(' and '),
+    : 'language': data[0]['language']}
+
+    #+NAME: Запись метаданных в БД
+    #+BEGIN_SRC python :var fields=fields[,0] :noweb no-export
+      mi = Metadata(data["title"], data["authors"])
+      for attr in fields:
+          if hasattr(mi, attr) and attr in data:
+              setattr(mi, attr, data[attr])
+
+      mi.print_all_attributes()
+      self.clean_downloaded_metadata(mi)
+      result_queue.put(mi)
+    #+END_SRC
+
+    Теперь можно загружать данные и преобразовывать их к нужному виду.
+    #+name: Загрузка информации
+    #+BEGIN_SRC python :noweb no-export
+      def load_info(identifier):
+           data = bibtexparser.loads(habanero.content_negotiation(ids=identifier,
+                                                                  format='bibtex')).entries
+           <<Преобразование полей()>>
+           return result
+    #+END_SRC
     
 ** TODO Извлечение DOI из файла
