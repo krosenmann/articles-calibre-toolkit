@@ -140,7 +140,18 @@
       ((string-match-p "author" s)
        (format "data[0]['author'].split(' and ')"))
     #+END_SRC
-    Другое озадачивающее поле -- язык. 
+    Другое озадачивающее поле -- язык. Для получения корректного
+    значения языка для воспользуемся встроенной функцией
+    преобразования
+    #+name: Дополнительные импорты
+    #+BEGIN_SRC python
+      from calibre.utils.localization import canonicalize_lang
+    #+END_SRC
+    #+name: Парсинг языка
+    #+BEGIN_SRC elisp
+      ((string-match-p "language" s)
+       (format "canonicalize_lang(data[0]['language'])"))
+    #+END_SRC
     
     Из еще оставшихся дыр - возможное отстуствие некоторых полей и
     дополнительные ключи (информация из них будет читаться в случае
@@ -175,6 +186,7 @@
         (cond
          <<Парсинг даты>>
          <<Парсинг авторов>>
+         <<Парсинг языка>>
          ((string-match-p ", " s)
           (mapconcat (lambda (x)
                        (format "data[0]['%s']" x))
@@ -194,7 +206,7 @@
     : 'pubdate': datetime.datetime(year=data[0]['year'], month=1, day=1),
     : 'publisher': data[0]['publisher'],
     : 'authors': data[0]['author'].split(' and '),
-    : 'language': data[0]['language']}
+    : 'language': canonicalize_lang(data[0]['language'])}
 
     #+NAME: Запись метаданных в БД
     #+BEGIN_SRC python :noweb no-export
