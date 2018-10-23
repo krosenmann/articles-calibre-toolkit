@@ -46,7 +46,7 @@
   #+BEGIN_SRC elisp :var plinfo=plugins :var ord=1
     (let ((plugin-info
            (mapcar (lambda (x)
-                     (format "class %s(%s)\n    %s"
+                     (format "class %s(%s):\n    %s"
                              (replace-regexp-in-string " " "" (car x))
                              (caddr x)
                              (format "name = '%s'\n    description = '%s'" (car x) (cadr x))))
@@ -81,6 +81,7 @@
     import habanero
     import re
     import bibtexparser
+    import datetime
   #+END_SRC
 
   #+name: Утилиты
@@ -89,7 +90,7 @@
         return re.match(r'\s*(10[.][0-9]{3,}(?:[.][0-9]+)*/(?:(?!["&\'<>])\S)+)\b', s)
   #+END_SRC
   
-  #+BEGIN_SRC python :noweb yes
+  #+BEGIN_SRC python :noweb yes :tangle ScientificMetadata/__init__.py
     <<Дополнительные импорты>>
     from calibre.ebooks.metadata.sources.base import Source
     from calibre.ebooks.metadata.book.base import Metadata
@@ -131,7 +132,7 @@
     #+name: Парсинг даты
     #+BEGIN_SRC elisp
       ((string-match-p "year" s)
-       (format "datetime.datetime(year=data[0]['year'], month=1, day=1)"))
+       (format "datetime.datetime(year=int(data[0]['year']), month=1, day=1)"))
     #+END_SRC
     Так же автор по типу данных не совпадает: на вход Calibre
     ожидает список.
@@ -150,7 +151,7 @@
     #+name: Парсинг языка
     #+BEGIN_SRC elisp
       ((string-match-p "language" s)
-       (format "canonicalize_lang(data[0]['language'])"))
+       (format "canonicalize_lang(data[0].get('language', 'en'))"))
     #+END_SRC
     
     Из еще оставшихся дыр - возможное отстуствие некоторых полей и
@@ -222,9 +223,9 @@
 
     Теперь можно загружать данные и преобразовывать их к нужному виду.
     #+name: Загрузка информации
-    #+BEGIN_SRC python :noweb no-export
+    #+BEGIN_SRC python :noweb no-export 
       def load_info(identifier):
-           data = bibtexparser.loads(habanero.content_negotiation(ids=identifier,
+           data = bibtexparser.loads(habanero.cn.content_negotiation(ids=identifier,
                                                                   format='bibtex')).entries
            <<Преобразование полей()>>
            return result
