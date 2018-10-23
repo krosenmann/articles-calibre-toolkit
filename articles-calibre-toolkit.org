@@ -140,6 +140,8 @@
       ((string-match-p "author" s)
        (format "data[0]['author'].split(' and ')"))
     #+END_SRC
+    Другое озадачивающее поле -- язык. 
+    
     Из еще оставшихся дыр - возможное отстуствие некоторых полей и
     дополнительные ключи (информация из них будет читаться в случае
     провала первого чтения).
@@ -155,6 +157,16 @@
     #+NAME: Поля БД
     #+BEGIN_SRC python :var fields=fields[,0]
       return "touched_fields = frozenset({})".format(fields)
+    #+END_SRC
+    
+    #+name: Поля публикации
+    #+BEGIN_SRC python :var fields=fields[,0] :results code
+      return "['" + "', '".join(fields) + "']"
+    #+END_SRC
+
+    #+RESULTS: Поля публикации
+    #+BEGIN_SRC python
+    ['title', 'pubdate', 'publisher', 'authors', 'language']
     #+END_SRC
 
     #+NAME: Преобразование полей
@@ -185,9 +197,9 @@
     : 'language': data[0]['language']}
 
     #+NAME: Запись метаданных в БД
-    #+BEGIN_SRC python :var fields=fields[,0] :noweb no-export
+    #+BEGIN_SRC python :noweb no-export
       mi = Metadata(data["title"], data["authors"])
-      for attr in fields:
+      for attr in <<Поля публикации()>>:
           if hasattr(mi, attr) and attr in data:
               setattr(mi, attr, data[attr])
 
