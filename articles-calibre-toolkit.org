@@ -12,6 +12,7 @@
 #+EXCLUDE_TAGS: noexport
 #+CREATOR: Emacs 27.0.50 (Org mode 9.1.14)
 #+STARTUP: showall
+#+PROPERTY: header-args:python :python calibre-debug
 
 * Вступление
   Articles Calibre Toolkit -- набор плагинов Calibre для организации
