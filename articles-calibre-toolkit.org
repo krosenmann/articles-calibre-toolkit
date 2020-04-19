@@ -22,7 +22,6 @@
   | Название плагина    | Описание                                       | Тип                 |
   |---------------------+------------------------------------------------+---------------------|
   | Scientific Metadata | Загружает метаданные по DOI статьи из CrossRef | Source              |
-  | Extract DOI         | Извлекает DOI из документа                     | InterfaceActionBase |
 
 * TODO Установка и настройка
    Плагины устанавливаются независимо, и могут быть использованы
@@ -63,85 +62,103 @@
 
 ** Поиск и загрузка метаданных 
   Плагин, условно, можно разделить на 2 части:
-  + Обработка и выкачивание данных из сети (с помощью библиотек
-    [[https://habanero.readthedocs.io/en/latest/][habanero]] и [[https://bibtexparser.readthedocs.io/en/master/index.html][bibtexparser]])
+  + Обработка и выкачивание данных из сети
   + Программно-интерфейсные вещи: чтение информации о публикации из
-    Calibre, и запись полученной из сети информации. 
+    Calibre, и запись полученной из сети информации.
+*** Скачивание и обработка
+    Плагин должен работать только с теми зависимостями, которые ему
+    предоставляет Calibre. В этом случае пользователю не нужно будет
+    устанавливать ничего дополнительно.
+    
+    Для поиска информации о статье используется API CrossRef.
+    #+name: Импорты для загрузки данных из crossref
+    #+BEGIN_SRC python
+      import urllib2
+      import json
+    #+END_SRC
 
-  Для плагинов метаданных в Calibre переопределяется метод ~identify~,
-  в который уже передается большая часть нужной информации и все
-  необходимые для загрузки интерфейсы. Все, что нужно здесь сделать:
-  корректно вызвать необходимые методы и передать DOI функции загрузки
-  для, непосредственно, загрузки.
-  Для целостности пакавана, выясним, является ли записанный в БД
-  Calibre DOI корректным, и можно просить habanero найти информацию о
-  нужных нам статьях.
-  Для валидации doi используем [[http://stackoverflow.com/questions/27910/finding-a-doi-in-a-document-or-page][регулярку]]
-  #+name: Дополнительные импорты
-  #+BEGIN_SRC python 
-    import habanero
-    import re
-    import bibtexparser
-    import datetime
-  #+END_SRC
+    #+BEGIN_SRC python :noweb-ref Запрашиваем информацию о публикации в Crossref
+      def load_info(doi):
+          """Function loads article metadata from `https://doi.org` based on doi
 
-  #+name: Утилиты
-  #+BEGIN_SRC python
-    def is_valid(s):
-        return re.match(r'\s*(10[.][0-9]{3,}(?:[.][0-9]+)*/(?:(?!["&\'<>])\S)+)\b', s)
-  #+END_SRC
-  
-  #+BEGIN_SRC python :noweb yes :tangle ScientificMetadata/__init__.py
-    <<Дополнительные импорты>>
-    from calibre.ebooks.metadata.sources.base import Source
-    from calibre.ebooks.metadata.book.base import Metadata
+          :param doi: doi string
+          :returns: dict of raw metadata
+          """
+          req = urllib2.Request('https://doi.org/{}'.format(doi))
+          req.add_header('Accept', 'application/json')
+          req.add_header('locale', 'en-US')
+          resp = urllib2.urlopen(req)
+          publication_info = resp.read()
+          return json.loads(publication_info)
+    #+END_SRC
+    
+    doi.org возвращает достаточно громоздкий json с избыточной
+    информацией по публикации:
+    #+BEGIN_SRC python :noweb yes :python /usr/bin/python :prologue # -*- encoding: utf-8 -*- :results pp :tangle no :exports results
+      <<Импорты для загрузки данных из crossref>>
+      import __future__
+
+      <<Запрашиваем информацию о публикации в Crossref>>
+
+      return load_info('10.1126/science.169.3946.635')
+    #+END_SRC
+
+    #+RESULTS:
+    #+begin_example
+    {u'DOI': u'10.1126/science.169.3946.635',
+     u'ISSN': [u'0036-8075', u'1095-9203'],
+     u'URL': u'http://dx.doi.org/10.1126/science.169.3946.635',
+     u'author': [{u'affiliation': [],
+                  u'family': u'Frank',
+                  u'given': u'H. S.',
+                  u'sequence': u'first'}],
+     u'container-title': u'Science',
+     u'container-title-short': u'Science',
+     u'content-domain': {u'crossmark-restriction': False, u'domain': []},
+     u'created': {u'date-parts': [[2006, 10, 5]],
+                  u'date-time': u'2006-10-05T12:56:56Z',
+                  u'timestamp': 1160053016000},
+     u'deposited': {u'date-parts': [[2020, 2, 5]],
+                    u'date-time': u'2020-02-05T16:15:06Z',
+                    u'timestamp': 1580919306000},
+     u'indexed': {u'date-parts': [[2020, 2, 5]],
+                  u'date-time': u'2020-02-05T16:43:08Z',
+                  u'timestamp': 1580920988055},
+     u'is-referenced-by-count': 73,
+     u'issue': u'3946',
+     u'issued': {u'date-parts': [[1970, 8, 14]]},
+     u'journal-issue': {u'issue': u'3946',
+                        u'published-print': {u'date-parts': [[1970, 8, 14]]}},
+     u'language': u'en',
+     u'link': [{u'URL': u'https://syndication.highwire.org/content/doi/10.1126/science.169.3946.635',
+                u'content-type': u'unspecified',
+                u'content-version': u'vor',
+                u'intended-application': u'similarity-checking'}],
+     u'member': u'221',
+     u'original-title': [],
+     u'page': u'635-641',
+     u'prefix': u'10.1126',
+     u'published-print': {u'date-parts': [[1970, 8, 14]]},
+     u'publisher': u'American Association for the Advancement of Science (AAAS)',
+     u'reference-count': 0,
+     u'references-count': 0,
+     u'relation': {},
+     u'score': 1.0,
+     u'short-title': [],
+     u'source': u'Crossref',
+     u'subject': [u'Multidisciplinary'],
+     u'subtitle': [],
+     u'title': u'The Structure of Ordinary Water: New data and interpretations are yielding new insights into this fascinating substance',
+     u'type': u'article-journal',
+     u'volume': u'169'}
+    #+end_example
 
 
-    <<Загрузка информации>>
-
-
-    <<Утилиты>>
-
-
-    <<datamacro(ord=1)>>
-        <<Информация о наборе>>
-        <<Поля БД()>>
-
-        def identify(self, log, result_queue, abort,
-                     title=None, authors=None, identifiers={}, timeout=30):
-            doi = identifiers.get("doi", None)
-            if not (doi and is_valid(doi)):
-                return None
-
-            data = load_info(doi)
-            if not data:
-                return None
-            <<Запись метаданных в БД>>
-  #+END_SRC
-
-*** Загрузка и запись метаданных
+*** Подготовка данных для записи в Calibre                              :WIP:
     Для начала установим соответсвия между полями в базе Calibre и
-    тем, что возвращает habanero. Их спокойно можно выдумывать, и
-    связывать какие поля с какими угодно.
-    Так же, по этому соотвествию, можно установить список полей,
-    которые затрагивает плагин ("поле... поле... поле... . Поле...")
-    Их же используем для записи.
-    Больше всего проблем тут доставляет разбор даты публикации,
-    т.к. Calibre ожидает получить ~datetime~ объект. Мне лень сейчас
-    придумывать, как нормально парсить и генерировать дату, поэтому
-    месяц принимаем равным =1=, то есть =Январю=.
-    #+name: Парсинг даты
-    #+BEGIN_SRC elisp
-      ((string-match-p "year" s)
-       (format "datetime.datetime(year=int(data[0]['year']), month=1, day=1)"))
-    #+END_SRC
-    Так же автор по типу данных не совпадает: на вход Calibre
-    ожидает список.
-    #+name: Парсинг авторов
-    #+BEGIN_SRC elisp
-      ((string-match-p "author" s)
-       (format "data[0]['author'].split(' and ')"))
-    #+END_SRC
+    тем, что возвращает crossref.  Больше всего проблем тут доставляет
+    разбор даты публикации, т.к. Calibre ожидает получить ~datetime~
+    объект.
     Другое озадачивающее поле -- язык. Для получения корректного
     значения языка для воспользуемся встроенной функцией
     преобразования
@@ -149,12 +166,19 @@
     #+BEGIN_SRC python
       from calibre.utils.localization import canonicalize_lang
     #+END_SRC
-    #+name: Парсинг языка
-    #+BEGIN_SRC elisp
-      ((string-match-p "language" s)
-       (format "canonicalize_lang(data[0].get('language', 'en'))"))
+
+    #+BEGIN_SRC python :noweb-ref Обработка метаданных
+      raw_metadata = load_info(doi)
+      data = {}
+      data[u'pubdate'] = datetime.datetime(
+          year=raw_metadata[u'published-print'][u'date-parts'][0][0],
+          month=raw_metadata[u'published-print'][u'date-parts'][0][1])
+      data[u'title'] = raw_metadata[u'title']
+      data[u'publisher'] = raw_metadata[u'publisher']
+      data[u'authors'] = ['{} {}'.format(a[u'given'], a[u'family']) for a in raw_metadata[u'author']]
+      data[u'language'] = canonicalize_lang(raw_metadata[u'language'])
     #+END_SRC
-    
+
     Из еще оставшихся дыр - возможное отстуствие некоторых полей и
     дополнительные ключи (информация из них будет читаться в случае
     провала первого чтения).
@@ -182,26 +206,6 @@
     ['title', 'pubdate', 'publisher', 'authors', 'language']
     #+END_SRC
 
-    #+NAME: Преобразование полей
-    #+BEGIN_SRC elisp :var fields=fields :noweb yes
-      (defun string-translation (s)
-        (cond
-         <<Парсинг даты>>
-         <<Парсинг авторов>>
-         <<Парсинг языка>>
-         ((string-match-p ", " s)
-          (mapconcat (lambda (x)
-                       (format "data[0]['%s']" x))
-                     (split-string s ", ")
-                     " + "))
-         (t (format "data[0]['%s']" s))))
-      (concat "result = {\n"
-              (mapconcat (lambda (x)
-                           (format "'%s': %s" (car x) (string-translation (cadr x))))
-                         fields
-                         ",\n") "}\n")
-    #+END_SRC
-
     #+RESULTS: Преобразование полей
     : result = {
     : 'title': data[0]['title'],
@@ -223,13 +227,53 @@
     #+END_SRC
 
     Теперь можно загружать данные и преобразовывать их к нужному виду.
-    #+name: Загрузка информации
-    #+BEGIN_SRC python :noweb no-export 
-      def load_info(identifier):
-           data = bibtexparser.loads(habanero.cn.content_negotiation(ids=identifier,
-                                                                  format='bibtex')).entries
-           <<Преобразование полей()>>
-           return result
-    #+END_SRC
-    
-** TODO Извлечение DOI из файла
+
+*** Программно-интерфейсные вещи    
+  Для плагинов метаданных в Calibre переопределяется метод ~identify~,
+  в который уже передается большая часть нужной информации и все
+  необходимые для загрузки интерфейсы. Все, что нужно здесь сделать:
+  корректно вызвать необходимые методы и передать DOI функции загрузки
+  для, непосредственно, загрузки.
+  Для целостности пакавана, выясним, является ли записанный в БД
+  Calibre DOI корректным, и можно просить habanero найти информацию о
+  нужных нам статьях.
+  Для валидации doi используем [[http://stackoverflow.com/questions/27910/finding-a-doi-in-a-document-or-page][регулярку]]
+  #+BEGIN_SRC python :noweb-ref Дополнительные импорты
+    import re
+    import datetime
+  #+END_SRC
+
+  #+name: Утилиты
+  #+BEGIN_SRC python
+    def is_valid(s):
+        return re.match(r'\s*(10[.][0-9]{3,}(?:[.][0-9]+)*/(?:(?!["&\'<>])\S)+)\b', s)
+  #+END_SRC
+  
+  #+BEGIN_SRC python :noweb yes :tangle ScientificMetadata/__init__.py
+    <<Дополнительные импорты>>
+    <<Импорты для загрузки данных из crossref>>
+    from calibre.ebooks.metadata.sources.base import Source
+    from calibre.ebooks.metadata.book.base import Metadata
+
+
+    <<Запрашиваем информацию о публикации в Crossref>>
+
+
+    <<Утилиты>>
+
+
+    <<datamacro(ord=1)>>
+        <<Информация о наборе>>
+        <<Поля БД()>>
+
+        def identify(self, log, result_queue, abort,
+                     title=None, authors=None, identifiers={}, timeout=30):
+            doi = identifiers.get("doi", "")
+            if not (doi and is_valid(doi)):
+                return None
+            <<Обработка метаданных>>
+            if not data:
+                return None
+            <<Запись метаданных в БД>>
+  #+END_SRC
+
